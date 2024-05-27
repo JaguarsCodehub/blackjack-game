@@ -12,4 +12,5 @@ export interface GameState {
   playerHand: Card[];
   dealerHand: Card[];
   deck: Deck;
+  state: 'playing' | 'win' | 'lose' | 'draw' | 'bust';
 }

@@ -1,5 +1,4 @@
-import { io } from 'socket.io-client';
+import { io, Socket } from 'socket.io-client';
 
-const socket = io('http://localhost:4000');
-
-export default socket;
+const URL = 'http://localhost:4000'; // Your backend URL
+export const socket: Socket = io(URL);

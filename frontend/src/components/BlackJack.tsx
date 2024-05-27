@@ -1,47 +1,85 @@
-import React, { useState, useEffect } from 'react';
-import socket from '../services/socket';
+import React, { useEffect, useState } from 'react';
+import { socket } from '../services/socket';
 import { Card, GameState } from '../types';
 
 const Blackjack: React.FC = () => {
-  const [playerHand, setPlayerHand] = useState<Card[]>([]);
-  const [dealerHand, setDealerHand] = useState<Card[]>([]);
+  const [gameState, setGameState] = useState<GameState | null>(null);
 
   useEffect(() => {
-    socket.on('gameStarted', (data: GameState) => {
-      setPlayerHand(data.playerHand);
-      setDealerHand(data.dealerHand);
+    console.log('Socket.IO client connecting...');
+
+    socket.on('connect', () => {
+      console.log('Connected to backend');
     });
 
-    // Clean up on unmount
+    socket.on('gameStarted', ({ gameState }) => {
+      // console.log('Game started', gameState);
+
+      setGameState(gameState);
+    });
+
+    socket.on('gameUpdate', ({ gameState }) => {
+      // console.log('Game updated', gameState);
+      setGameState(gameState);
+    });
+
     return () => {
+      socket.off('connect');
       socket.off('gameStarted');
+      socket.off('gameUpdate');
     };
   }, []);
 
   const startGame = () => {
+    console.log('Starting game...');
     socket.emit('startGame');
+  };
+
+  const hit = () => {
+    if (gameState) {
+      console.log('Player hitting...', { gameId: gameState._id });
+      socket.emit('playerHit', { gameId: gameState._id });
+    }
+  };
+
+  const stand = () => {
+    if (gameState) {
+      console.log('Player standing...', { gameId: gameState._id });
+      socket.emit('playerStand', { gameId: gameState._id });
+    }
   };
 
   return (
     <div>
-      <h1>Blackjack Game</h1>
-      <button onClick={startGame}>Start Game</button>
-      <div>
-        <h2>Player's Hand</h2>
-        {playerHand.map((card, index) => (
-          <div key={index}>
-            {card.value} of {card.suit}
+      <h1>Blackjack</h1>
+      {gameState ? (
+        <div key={gameState._id}>
+          <div key={gameState._id}>
+            <h2>Player's Hand</h2>
+            {gameState &&
+              gameState.playerHand &&
+              gameState.playerHand.map((card: Card) => (
+                <span key={card._id}>
+                  {card.value} of {card.suit},{' '}
+                </span>
+              ))}
           </div>
-        ))}
-      </div>
-      <div>
-        <h2>Dealer's Hand</h2>
-        {dealerHand.map((card, index) => (
-          <div key={index}>
-            {card.value} of {card.suit}
+          <div>
+            <h2>Dealer's Hand</h2>
+            {gameState &&
+              gameState.playerHand &&
+              gameState.dealerHand.map((card: Card) => (
+                <span key={card._id}>
+                  {card.value} of {card.suit},{' '}
+                </span>
+              ))}
           </div>
-        ))}
-      </div>
+          <button onClick={hit}>Hit</button>
+          <button onClick={stand}>Stand</button>
+        </div>
+      ) : (
+        <button onClick={startGame}>Start Game</button>
+      )}
     </div>
   );
 };

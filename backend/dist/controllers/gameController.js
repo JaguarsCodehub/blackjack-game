@@ -12,9 +12,10 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.startGame = void 0;
+exports.playerStand = exports.playerHit = exports.startGame = void 0;
 const Card_1 = __importDefault(require("../models/Card"));
-const Deck_1 = __importDefault(require("../models/Deck"));
+const Game_1 = __importDefault(require("../models/Game"));
+const calculateHandValue_1 = require("../utils/calculateHandValue");
 const suits = ['Hearts', 'Diamonds', 'Clubs', 'Spades'];
 const values = [
     '2',
@@ -37,26 +38,80 @@ const createDeck = () => __awaiter(void 0, void 0, void 0, function* () {
         for (const value of values) {
             const card = new Card_1.default({ suit, value });
             yield card.save();
-            cards.push(card.toObject()); // Convert Mongoose document to plain object
+            cards.push(card);
         }
     }
-    const deck = new Deck_1.default({ cards });
-    yield deck.save();
-    return { cards };
+    return cards;
 });
 const shuffleDeck = (deck) => {
-    for (let i = deck.cards.length - 1; i > 0; i--) {
+    for (let i = deck.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
-        [deck.cards[i], deck.cards[j]] = [deck.cards[j], deck.cards[i]];
+        [deck[i], deck[j]] = [deck[j], deck[i]];
     }
     return deck;
 };
 const startGame = (io, socket) => __awaiter(void 0, void 0, void 0, function* () {
-    let deck = yield createDeck();
-    deck = shuffleDeck(deck);
-    const playerHand = [deck.cards.pop(), deck.cards.pop()];
-    const dealerHand = [deck.cards.pop(), deck.cards.pop()];
-    const gameState = { playerHand, dealerHand, deck };
-    socket.emit('gameStarted', gameState);
+    const deck = shuffleDeck(yield createDeck());
+    const playerHand = [deck.pop(), deck.pop()];
+    const dealerHand = [deck.pop(), deck.pop()];
+    const game = new Game_1.default({
+        playerHand,
+        dealerHand,
+        deck,
+        state: 'playing',
+    });
+    yield game.save();
+    const gameState = {
+        _id: game._id,
+        playerHand,
+        dealerHand,
+        deck,
+        state: game.state,
+    };
+    console.log('Game started with state:', gameState);
+    socket.emit('gameStarted', { gameState });
 });
 exports.startGame = startGame;
+const playerHit = (io, socket, gameId) => __awaiter(void 0, void 0, void 0, function* () {
+    const game = yield Game_1.default.findById(gameId).populate('deck.cards');
+    if (!game)
+        return;
+    const card = game.deck.pop();
+    game.playerHand.push(card);
+    yield game.save();
+    const playerHandValue = (0, calculateHandValue_1.calculateHandValue)(game.playerHand);
+    if (playerHandValue > 21) {
+        game.state = 'bust';
+        yield game.save();
+        socket.emit('gameUpdate', { gameId: game._id, gameState: game });
+        console.log('Player busted');
+        return;
+    }
+    socket.emit('gameUpdate', { gameId: game._id, gameState: game });
+    console.log('Player hit, new game state:', game);
+});
+exports.playerHit = playerHit;
+const playerStand = (io, socket, gameId) => __awaiter(void 0, void 0, void 0, function* () {
+    const game = yield Game_1.default.findById(gameId).populate('deck.cards');
+    if (!game)
+        return;
+    while ((0, calculateHandValue_1.calculateHandValue)(game.dealerHand) < 17) {
+        const card = game.deck.pop();
+        game.dealerHand.push(card);
+    }
+    const playerHandValue = (0, calculateHandValue_1.calculateHandValue)(game.playerHand);
+    const dealerHandValue = (0, calculateHandValue_1.calculateHandValue)(game.dealerHand);
+    if (dealerHandValue > 21 || playerHandValue > dealerHandValue) {
+        game.state = 'win';
+    }
+    else if (playerHandValue < dealerHandValue) {
+        game.state = 'lose';
+    }
+    else {
+        game.state = 'draw';
+    }
+    yield game.save();
+    socket.emit('gameUpdate', { gameId: game._id, gameState: game });
+    console.log('Player stood, final game state:', game);
+});
+exports.playerStand = playerStand;
